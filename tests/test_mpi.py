@@ -3,8 +3,10 @@ import numpy as np
 import pytest
 from conftest import skipif_yask
 
-from devito import Grid, Function
+from devito import Grid, Function, TimeFunction, Eq, Operator
+from devito.ir.iet import gather
 from devito.distributed import LEFT, RIGHT
+from devito.types import Array
 
 
 @skipif_yask
@@ -172,6 +174,17 @@ def test_halo_exchange_quadrilateral():
         assert np.all(f.data_ro_with_halo[1:-1, 0] == 3.)
         assert np.all(f.data_ro_with_halo[0, 1:-1] == 2.)
         assert f.data_ro_with_halo[0, 0] == 1.
+
+
+class TestCodeGeneration(object):
+
+    def test_gather(self):
+        grid = Grid(shape=(4, 4))
+        x, y = grid.dimensions
+
+        f = TimeFunction(name='f', grid=grid)
+
+        a, iet = gather(f, x, LEFT)
 
 
 if __name__ == "__main__":
