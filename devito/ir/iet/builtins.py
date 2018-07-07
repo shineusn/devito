@@ -1,36 +1,87 @@
+from itertools import product
+
+from sympy import S
+import numpy as np
+
+from devito.dimension import IncrDimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
-from devito.ir.iet.nodes import Iteration, Expression, Callable
+from devito.ir.iet.nodes import (ArrayCast, Callable, Conditional, Expression,
+                                 Iteration, List)
 from devito.ir.iet.utils import derive_parameters
-from devito.types import Array
+from devito.types import Array, Scalar
 from devito.tools import is_integer
 
-__all__ = ['copy', 'gather', 'scatter']
+__all__ = ['copy', 'halo_exchange']
 
 
-def copy(src, dst, name):
+def copy(src, fixed):
     """
-    Construct a :class:`Callable` that copies ``dst.shape`` entries
-    from ``src`` to ``dst``.
+    Construct a :class:`Callable` copying an arbitrary convex region of ``src``
+    into a contiguous :class:`Array`.
     """
-    iet = Expression(DummyEq(dst, src))
-    for d, s, i in reversed(list(zip(dst.function.dimensions, dst.shape, dst.indices))):
-        if is_integer(i):
+    src_indices = []
+    dst_indices = []
+    dst_shape = []
+    dst_dimensions = []
+    for d in src.dimensions:
+        dst_d = IncrDimension(d, S.Zero, S.One, name='dst_%s' % d)
+        dst_dimensions.append(dst_d)
+        if d in fixed:
+            src_indices.append(fixed[d])
+            dst_indices.append(0)
+            dst_shape.append(1)
+        else:
+            src_indices.append(d + Scalar(name='o%s' % d, dtype=np.int32))
+            dst_indices.append(dst_d)
+            dst_shape.append(dst_d)
+    dst = Array(name='dst', shape=dst_shape, dimensions=dst_dimensions)
+
+    iet = Expression(DummyEq(dst[dst_indices], src[src_indices]))
+    for sd, dd, s in reversed(list(zip(src.dimensions, dst.dimensions, dst.shape))):
+        if is_integer(s):
             continue
-        iet = Iteration(iet, d, s)
+        iet = Iteration(iet, sd, s.symbolic_size, uindices=dd)
+    iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
     parameters = derive_parameters(iet)
-    ret = Callable(name, iet, 'void', parameters, ('static',))
+    return Callable('copy', iet, 'void', parameters, ('static',))
+
+
+def halo_exchange(f, fixed):
+    """
+    Construct an IET performing a halo exchange for a :class:`TensorFunction`.
+    """
+    assert f.is_Function
     from IPython import embed; embed()
 
+    # Compute send/recv array buffers
+    buffers = []
+    for d0, i in product(f.dimensions, [LEFT, RIGHT]):
+        if d0 in fixed:
+            continue
+        shape = [2]  # 2 -- 1 for send buffer, 1 for recv buffer
+        offsets = []
+        for d1, s in zip(f.dimensions, f.symbolic_shape):
+            if d1 in fixed:
+                shape.append(1)
+                offsets.append(fixed[d1])
+            elif d0 is d1:
+                if i is LEFT:
+                    shape.append(f._extent_halo[d0].left)
+                    offsets.append(f._offset_halo[d0].left)
+                else:
+                    shape.append(f._extent_halo[d0].right)
+                    offsets.append(i - f._offset_domain[d0].right)
+            else:
+                shape.append(s)
+                offsets.append(0)
+            buffers.append(Array(name='buffer_%s%s' % (d, i.name[0])), shape=shape)
 
-def gather(src, dimension, direction, fixed_index=None):
-    """
-    Construct an IET that copies ``src``'s halo along given ``dimension``
-    and ``direction`` to an :class:`Array`. Return the IET as well as the
-    destination :class:`Array`.
-    """
-    assert src.is_Function
-    fixed_index = fixed_index or {}
+    for d in f.dimensions:
+        for i in [LEFT, RIGHT]:
+
+            mask = Scalar(name='m_%s%s' % (d, i.name[0]), dtype=np.int32)
+            cond = Conditional(mask, ...)
 
     shape = []
     src_indices = []
@@ -55,14 +106,4 @@ def gather(src, dimension, direction, fixed_index=None):
             dst_indices.append(d)
         else:
             assert False
-    dst = Array(name='dst', shape=shape, dimensions=src.dimensions)
-    return copy(src[src_indices], dst[dst_indices], 'gather_halo_%s' % src.name)
-
-
-def scatter(dst, dimension, direction, fixed_index=None):
-    """
-    Construct an IET that copies data from an :class:`Array` into ``dst``'s
-    halo along given ``dimension`` and ``direction``. Return the IET as well
-    as the source :class:`Array`.
-    """
-    assert dst.is_Function
+    return copy(src, fixed_index)
