@@ -230,10 +230,11 @@ class TestCodeGeneration(object):
     def test_gather(self):
         grid = Grid(shape=(4, 4))
         x, y = grid.dimensions
+        t = grid.stepping_dim
 
         f = TimeFunction(name='f', grid=grid)
 
-        a, iet = gather(f, x, LEFT)
+        a, iet = gather(f, x, LEFT, {t: 0})
 
 
 if __name__ == "__main__":
