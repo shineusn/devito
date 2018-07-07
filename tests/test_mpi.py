@@ -257,7 +257,7 @@ const int x_size, const int y_size)
 
         f = TimeFunction(name='f', grid=grid)
 
-        iet = halo_exchange(f)
+        iet = halo_exchange(f, {t: 0})
         from IPython import embed; embed()
 
 

@@ -3,7 +3,7 @@ from itertools import product
 from sympy import S
 import numpy as np
 
-from devito.dimension import IncrDimension
+from devito.dimension import DefaultDimension, IncrDimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
 from devito.ir.iet.nodes import (ArrayCast, Callable, Conditional, Expression,
@@ -52,58 +52,42 @@ def halo_exchange(f, fixed):
     Construct an IET performing a halo exchange for a :class:`TensorFunction`.
     """
     assert f.is_Function
-    from IPython import embed; embed()
 
     # Compute send/recv array buffers
-    buffers = []
+    buffers = {}
     for d0, i in product(f.dimensions, [LEFT, RIGHT]):
         if d0 in fixed:
             continue
-        shape = [2]  # 2 -- 1 for send buffer, 1 for recv buffer
+        dimensions = [DefaultDimension(name='b', default_value=2)]
+        halo = [(0, 0)]
         offsets = []
-        for d1, s in zip(f.dimensions, f.symbolic_shape):
+        for d1 in f.dimensions:
             if d1 in fixed:
-                shape.append(1)
+                dimensions.append(DefaultDimension(name='h%s' % d1, default_value=1))
+                halo.append((0, 0))
                 offsets.append(fixed[d1])
             elif d0 is d1:
                 if i is LEFT:
-                    shape.append(f._extent_halo[d0].left)
-                    offsets.append(f._offset_halo[d0].left)
+                    # TODO : probably need to swap left with right !! 
+                    # As the stencils may be asymmetric ......
+                    size = f._extent_halo[d0].left
+                    offset = f._offset_halo[d0].left
                 else:
-                    shape.append(f._extent_halo[d0].right)
-                    offsets.append(i - f._offset_domain[d0].right)
+                    size = f._extent_halo[d0].right
+                    offset = f._offset_domain[d0].left + d0.symbolic_size
+                dimensions.append(DefaultDimension(name='h%s' % d1, default_value=size))
+                halo.append((0, 0))
+                offsets.append(offset)
             else:
-                shape.append(s)
+                dimensions.append(d1)
+                halo.append(f._extent_halo[d0])
                 offsets.append(0)
-            buffers.append(Array(name='buffer_%s%s' % (d, i.name[0])), shape=shape)
+        name = 'B%s%s' % (d0, i.name[0])
+        buffers[(d0, i)] = (Array(name=name, dimensions=dimensions, halo=halo), offsets)
+    from IPython import embed; embed()
 
     for d in f.dimensions:
         for i in [LEFT, RIGHT]:
 
             mask = Scalar(name='m_%s%s' % (d, i.name[0]), dtype=np.int32)
             cond = Conditional(mask, ...)
-
-    shape = []
-    src_indices = []
-    dst_indices = []
-    for d, i in zip(src.dimensions, src.symbolic_shape):
-        if d in fixed_index:
-            shape.append(1)
-            src_indices.append(fixed_index[d])
-            dst_indices.append(0)
-        elif d == dimension:
-            if direction is LEFT:
-                shape.append(src._extent_halo[d].left)
-                src_indices.append(d + src._offset_halo[d].left)
-                dst_indices.append(d)
-            else:
-                shape.append(src._extent_halo[d].right)
-                src_indices.append(d + i - src._offset_domain[d].right)
-                dst_indices.append(d)
-        elif d.is_Space:
-            shape.append(i)
-            src_indices.append(d)
-            dst_indices.append(d)
-        else:
-            assert False
-    return copy(src, fixed_index)
