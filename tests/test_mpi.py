@@ -234,22 +234,17 @@ class TestCodeGeneration(object):
         f = TimeFunction(name='f', grid=grid)
 
         iet = copy(f, {t: 0})
-        assert str(iet) == """void copy(float *restrict dst_vec, float *restrict f_vec, \
-const int ox, const int oy, const int dst_x_size, const int dst_y_size, \
-const int x_size, const int y_size)
-{
-  float (*restrict f)[x_size + 1 + 1][y_size + 1 + 1] __attribute__((aligned(64))) = \
-(float (*)[x_size + 1 + 1][y_size + 1 + 1]) f_vec;
-  float (*restrict dst)[dst_x_size][dst_y_size] __attribute__((aligned(64))) = \
-(float (*)[dst_x_size][dst_y_size]) dst_vec;
-  for (int x = 0, dst_x = 0; x <= dst_x_size; x += 1, dst_x = dst_x + 1)
+        assert str(iet.parameters) ==\
+'(dst(dst_t, dst_x, dst_y), dst_t_size, dst_x_size,\
+ dst_y_size, f(t, x, y), ox, oy, x_size, y_size)'
+        assert """for (int x = 0, dst_x = 0; x <= dst_x_size; x += 1, dst_x = dst_x + 1)
   {
     for (int y = 0, dst_y = 0; y <= dst_y_size; y += 1, dst_y = dst_y + 1)
     {
       dst[0][dst_x][dst_y] = f[0][x + ox][y + oy];
     }
   }
-}"""
+}""" in str(iet)
 
     def test_iet_halo_exchange(self):
         grid = Grid(shape=(4, 4))

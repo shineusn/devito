@@ -10,7 +10,7 @@ from devito.ir.iet.nodes import (ArrayCast, Callable, Conditional, Expression,
                                  Iteration, List)
 from devito.ir.iet.utils import derive_parameters
 from devito.types import Array, Scalar
-from devito.tools import is_integer
+from devito.tools import Tag, is_integer
 
 __all__ = ['copy', 'halo_exchange']
 
@@ -39,9 +39,9 @@ def copy(src, fixed):
 
     iet = Expression(DummyEq(dst[dst_indices], src[src_indices]))
     for sd, dd, s in reversed(list(zip(src.dimensions, dst.dimensions, dst.shape))):
-        if is_integer(s):
+        if is_integer(s) or sd in fixed:
             continue
-        iet = Iteration(iet, sd, s.symbolic_size, uindices=dd)
+        iet = Iteration(iet, sd, s, uindices=dd)
     iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
     parameters = derive_parameters(iet)
     return Callable('copy', iet, 'void', parameters, ('static',))
@@ -53,9 +53,14 @@ def halo_exchange(f, fixed):
     """
     assert f.is_Function
 
-    # Compute send/recv array buffers
+    class CommType(Tag):
+        pass
+    SEND = CommType('send')
+    RECV = CommType('recv')
+
+    # Compute send/recv buffers
     buffers = {}
-    for d0, i in product(f.dimensions, [LEFT, RIGHT]):
+    for d0, i, ct in product(f.dimensions, [LEFT, RIGHT], [SEND, RECV]):
         if d0 in fixed:
             continue
         dimensions = [DefaultDimension(name='b', default_value=2)]
@@ -67,23 +72,30 @@ def halo_exchange(f, fixed):
                 halo.append((0, 0))
                 offsets.append(fixed[d1])
             elif d0 is d1:
-                if i is LEFT:
-                    # TODO : probably need to swap left with right !! 
-                    # As the stencils may be asymmetric ......
-                    size = f._extent_halo[d0].left
-                    offset = f._offset_halo[d0].left
+                if ct is SEND:
+                    if i is LEFT:
+                        offset = f._offset_domain[d0].left
+                        extent = f._extent_halo[d0].right
+                    else:
+                        offset = f._offset_domain[d0].left + d0.symbolic_size -\
+                            f._extent_halo[d0].left
+                        extent = f._extent_halo[d0].left
                 else:
-                    size = f._extent_halo[d0].right
-                    offset = f._offset_domain[d0].left + d0.symbolic_size
-                dimensions.append(DefaultDimension(name='h%s' % d1, default_value=size))
+                    if i is LEFT:
+                        offset = f._offset_halo[d0].left
+                        extent = f._extent_halo[d0].left
+                    else:
+                        offset = f._offset_domain[d0].left + d0.symbolic_size
+                        extent = f._extent_halo[d0].right
+                dimensions.append(DefaultDimension(name='h%s' % d1, default_value=extent))
                 halo.append((0, 0))
                 offsets.append(offset)
             else:
                 dimensions.append(d1)
                 halo.append(f._extent_halo[d0])
                 offsets.append(0)
-        name = 'B%s%s' % (d0, i.name[0])
-        buffers[(d0, i)] = (Array(name=name, dimensions=dimensions, halo=halo), offsets)
+        array = Array(name='B%s%s' % (d0, i.name[0]), dimensions=dimensions, halo=halo)
+        buffers[(d0, i, ct)] = (array, offsets)
     from IPython import embed; embed()
 
     for d in f.dimensions:
