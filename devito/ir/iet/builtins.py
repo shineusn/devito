@@ -37,6 +37,8 @@ def copy(src, fixed):
             dst_shape.append(dst_d)
     dst = Array(name='dst', shape=dst_shape, dimensions=dst_dimensions)
 
+    # FIXME: somehow the halo/padding shouldn't appear here !!!!! or should they??
+
     iet = Expression(DummyEq(dst[dst_indices], src[src_indices]))
     for sd, dd, s in reversed(list(zip(src.dimensions, dst.dimensions, dst.shape))):
         if is_integer(s) or sd in fixed:
@@ -81,6 +83,13 @@ def halo_exchange(f, fixed):
     # Construct Callable
     for (d, side, region), (array, offsets) in buffers.items():
         mask = Scalar(name='m%s%s' % (d, side.name[0]), dtype=np.int32)
-        call = Call('copy', array.name, 1, )
-        cond = Conditional(mask, )
+        args = [array.name] + list(array.shape)
+        args.append(f.name)
+        args.extend([i for i, d in zip(offsets, f.dimensions) if d not in fixed])
+        args.extend([d.symbolic_size for d in f.dimensions if d not in fixed])
+        # TODO: x_size or x_size + 1
+        # ANSWER: PROBABLY X_SIZE + 1 -- WE HAVE TO CHANGE COPY() TO USE src, NOT f, and
+        # so to use arbitrary sizes...
         from IPython import embed; embed()
+        call = Call('copy', array.name, 1)
+        cond = Conditional(mask, 1)
