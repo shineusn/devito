@@ -6,11 +6,11 @@ import numpy as np
 from devito.dimension import DefaultDimension, IncrDimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
-from devito.ir.iet.nodes import (ArrayCast, Callable, Conditional, Expression,
+from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Expression,
                                  Iteration, List)
 from devito.ir.iet.utils import derive_parameters
-from devito.types import Array, Scalar
-from devito.tools import Tag, is_integer
+from devito.types import Array, Scalar, OWNED, HALO
+from devito.tools import is_integer
 
 __all__ = ['copy', 'halo_exchange']
 
@@ -53,18 +53,13 @@ def halo_exchange(f, fixed):
     """
     assert f.is_Function
 
-    class CommType(Tag):
-        pass
-    SEND = CommType('send')
-    RECV = CommType('recv')
-
-    # Compute send/recv buffers
+    # Construct send/recv buffers
     buffers = {}
-    for d0, i, ct in product(f.dimensions, [LEFT, RIGHT], [SEND, RECV]):
+    for d0, side, region in product(f.dimensions, [LEFT, RIGHT], [OWNED, HALO]):
         if d0 in fixed:
             continue
-        dimensions = [DefaultDimension(name='b', default_value=2)]
-        halo = [(0, 0)]
+        dimensions = []
+        halo = []
         offsets = []
         for d1 in f.dimensions:
             if d1 in fixed:
@@ -72,21 +67,7 @@ def halo_exchange(f, fixed):
                 halo.append((0, 0))
                 offsets.append(fixed[d1])
             elif d0 is d1:
-                if ct is SEND:
-                    if i is LEFT:
-                        offset = f._offset_domain[d0].left
-                        extent = f._extent_halo[d0].right
-                    else:
-                        offset = f._offset_domain[d0].left + d0.symbolic_size -\
-                            f._extent_halo[d0].left
-                        extent = f._extent_halo[d0].left
-                else:
-                    if i is LEFT:
-                        offset = f._offset_halo[d0].left
-                        extent = f._extent_halo[d0].left
-                    else:
-                        offset = f._offset_domain[d0].left + d0.symbolic_size
-                        extent = f._extent_halo[d0].right
+                offset, extent = f._get_region(region, d0, side, True)
                 dimensions.append(DefaultDimension(name='h%s' % d1, default_value=extent))
                 halo.append((0, 0))
                 offsets.append(offset)
@@ -94,12 +75,12 @@ def halo_exchange(f, fixed):
                 dimensions.append(d1)
                 halo.append(f._extent_halo[d0])
                 offsets.append(0)
-        array = Array(name='B%s%s' % (d0, i.name[0]), dimensions=dimensions, halo=halo)
-        buffers[(d0, i, ct)] = (array, offsets)
-    from IPython import embed; embed()
+        array = Array(name='B%s%s' % (d0, side.name[0]), dimensions=dimensions, halo=halo)
+        buffers[(d0, side, region)] = (array, offsets)
 
-    for d in f.dimensions:
-        for i in [LEFT, RIGHT]:
-
-            mask = Scalar(name='m_%s%s' % (d, i.name[0]), dtype=np.int32)
-            cond = Conditional(mask, ...)
+    # Construct Callable
+    for (d, side, region), (array, offsets) in buffers.items():
+        mask = Scalar(name='m%s%s' % (d, side.name[0]), dtype=np.int32)
+        call = Call('copy', array.name, 1, )
+        cond = Conditional(mask, )
+        from IPython import embed; embed()
