@@ -56,8 +56,8 @@ def mpi_irecv(buf, dest, comm):
     """
     count = reduce(mul, buf.shape, 1)
     datatype = numpy_to_mpitypes(buf.dtype)
-    args = [buf, count, datatype, DEST??, 'MPI_ANY_TAG', ]
-    Call('MPI_Irecv', )
+    args = [buf, count, datatype, DEST, 'MPI_ANY_TAG']
+    Call('MPI_Irecv')
 
 
 def mpi_exchange(f, fixed):

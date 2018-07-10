@@ -4,7 +4,7 @@ import pytest
 from conftest import skipif_yask
 
 from devito import Grid, Function, TimeFunction, Eq, Operator
-from devito.ir.iet import copy, halo_exchange
+from devito.ir.iet import copy, mpi_exchange
 from devito.distributed import LEFT, RIGHT
 from devito.types import Array
 
