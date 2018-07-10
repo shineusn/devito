@@ -1,4 +1,6 @@
+from collections import OrderedDict
 from itertools import product
+from operator import mul
 
 from sympy import S
 import numpy as np
@@ -10,15 +12,18 @@ from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Express
                                  Iteration, List)
 from devito.ir.iet.utils import derive_parameters
 from devito.types import Array, Scalar, OWNED, HALO
-from devito.tools import is_integer
+from devito.tools import is_integer, numpy_to_mpitypes
 
-__all__ = ['copy', 'halo_exchange']
+__all__ = ['copy', 'mpi_exchange']
 
 
-def copy(f):
+def copy(f, swap=False):
     """
-    Construct a :class:`Callable` capable of copying an arbitrary convex
-    region of ``f`` into a contiguous :class:`Array`.
+    Construct a :class:`Callable` capable of copying: ::
+
+        * an arbitrary convex region of ``f`` into a contiguous :class:`Array`, OR
+        * if ``swap=True``, a contiguous :class:`Array` into an arbitrary convex
+          region of ``f``.
     """
     src_indices, dst_indices = [], []
     src_dimensions, dst_dimensions = [], []
@@ -27,25 +32,42 @@ def copy(f):
         src_dimensions.append(Dimension(name='src_%s' % d.root))
         src_indices.append(d.root + Scalar(name='o%s' % d.root, dtype=np.int32))
         dst_indices.append(d.root)
-    src = Array(name='src', dimensions=src_dimensions)
-    dst = Array(name='dst', dimensions=dst_dimensions)
+    src = Array(name='src', dimensions=src_dimensions, dtype=f.dtype)
+    dst = Array(name='dst', dimensions=dst_dimensions, dtype=f.dtype)
 
-    iet = Expression(DummyEq(dst[dst_indices], src[src_indices]))
+    if swap is False:
+        eq = DummyEq(dst[dst_indices], src[src_indices])
+        name = 'gather'
+    else:
+        eq = DummyEq(src[src_indices], dst[dst_indices])
+        name = 'scatter'
+
+    iet = Expression(eq)
     for d, dd in reversed(list(zip(f.dimensions, dst.dimensions))):
         iet = Iteration(iet, d.root, dd.symbolic_size)
     iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
     parameters = derive_parameters(iet)
-    return Callable('copy', iet, 'void', parameters, ('static',))
+    return Callable(name, iet, 'void', parameters, ('static',))
 
 
-def halo_exchange(f, fixed):
+def mpi_irecv(buf, dest, comm):
+    """
+    Construct an IET performing an MPI_Irecv.
+    """
+    count = reduce(mul, buf.shape, 1)
+    datatype = numpy_to_mpitypes(buf.dtype)
+    args = [buf, count, datatype, DEST??, 'MPI_ANY_TAG', ]
+    Call('MPI_Irecv', )
+
+
+def mpi_exchange(f, fixed):
     """
     Construct an IET performing a halo exchange for a :class:`TensorFunction`.
     """
     assert f.is_Function
 
     # Construct send/recv buffers
-    buffers = {}
+    buffers = OrderedDict()
     for d0, side, region in product(f.dimensions, [LEFT, RIGHT], [OWNED, HALO]):
         if d0 in fixed:
             continue
@@ -66,19 +88,24 @@ def halo_exchange(f, fixed):
                 dimensions.append(d1)
                 halo.append(f._extent_halo[d0])
                 offsets.append(0)
-        array = Array(name='B%s%s' % (d0, side.name[0]), dimensions=dimensions, halo=halo)
+        array = Array(name='B%s%s' % (d0, side.name[0]), dimensions=dimensions,
+                      halo=halo, dtype=f.dtype)
         buffers[(d0, side, region)] = (array, offsets)
 
-    # Construct Callable
+    # Construct send/recv code
+    groups = OrderedDict()
     for (d, side, region), (array, offsets) in buffers.items():
+        # Call arguments
+        args = [array] + list(array.symbolic_shape)
+        args.extend([f] + offsets + list(f.symbolic_shape))
+
+        # Function calls (gather/scatter and send/recv)
+        if region is OWNED:
+            call = Call('gather', args)
+            
+        else:
+            call = Call('scatter', args)
+        
         mask = Scalar(name='m%s%s' % (d, side.name[0]), dtype=np.int32)
-        args = [array.name] + list(array.shape)
-        args.append(f.name)
-        args.extend([i for i, d in zip(offsets, f.dimensions) if d not in fixed])
-        args.extend([d.symbolic_size for d in f.dimensions if d not in fixed])
-        # TODO: x_size or x_size + 1
-        # ANSWER: PROBABLY X_SIZE + 1 -- WE HAVE TO CHANGE COPY() TO USE src, NOT f, and
-        # so to use arbitrary sizes...
+        cond = Conditional(mask, call)
         from IPython import embed; embed()
-        call = Call('copy', array.name, 1)
-        cond = Conditional(mask, 1)

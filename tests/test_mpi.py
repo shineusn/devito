@@ -253,7 +253,7 @@ class TestCodeGeneration(object):
 
         f = TimeFunction(name='f', grid=grid)
 
-        iet = halo_exchange(f, {t: 0})
+        iet = mpi_exchange(f, {t: 0})
         from IPython import embed; embed()
 
 
