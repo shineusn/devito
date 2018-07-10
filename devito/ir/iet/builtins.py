@@ -3,17 +3,16 @@ from functools import reduce
 from itertools import product
 from operator import mul
 
-import cgen as c
 import numpy as np
-from sympy import S
+from sympy import S, Symbol
 
 from devito.dimension import DefaultDimension, Dimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
-from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Element,
+from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Definition,
                                  Expression, Iteration, List)
 from devito.ir.iet.utils import derive_parameters
-from devito.symbolics import Byref, FieldFromPointer
+from devito.symbolics import Byref, FieldFromPointer, Macro
 from devito.types import Array, Scalar, OWNED, HALO
 from devito.tools import is_integer, numpy_to_mpitypes
 
@@ -106,27 +105,33 @@ def mpi_exchange(f, fixed):
 
         # MPI-call arguments
         count = reduce(mul, array.symbolic_shape, 1)
-        dtype = numpy_to_mpitypes(array.dtype)
+        dtype = Macro(numpy_to_mpitypes(array.dtype))
         peer = FieldFromPointer("%s%s" % (d, side.name), nb.name)
-        mpi_args = [array, count, dtype, peer, 'MPI_ANY_TAG', comm.name]
+        mpi_args = [array, count, dtype, peer, Macro('MPI_ANY_TAG'), Symbol(comm.name)]
 
         # Function calls (gather/scatter and send/recv)
         if region is OWNED:
-            rsend = Element(c.Value('MPI_Request', 'rsend'))
+            rsend = Definition('MPI_Request', 'rsend')
             gather = Call('gather', pack_args)
-            send = Call('MPI_Isend', mpi_args)
-            wait = Call('MPI_Wait', [Byref('rsend'), 'MPI_STATUS_IGNORE'])
-            group[OWNED] = [gather, send, wait]
+            send = Call('MPI_Isend', mpi_args + [Byref('rsend')])
+            wait = Call('MPI_Wait', [Byref('rsend'), Macro('MPI_STATUS_IGNORE')])
+            group[OWNED] = [gather, rsend, send, wait]
         else:
-            rrecv = Element(c.Value('MPI_Request', 'rrecv'))
+            rrecv = Definition('MPI_Request', 'rrecv')
             scatter = Call('scatter', pack_args)
-            recv = Call('MPI_Irecv', mpi_args)
-            wait = Call('MPI_Wait', [Byref('rrecv'), 'MPI_STATUS_IGNORE'])
-            group[HALO] = [[recv], [wait, scatter]]
+            recv = Call('MPI_Irecv', mpi_args + [Byref('rrecv')])
+            wait = Call('MPI_Wait', [Byref('rrecv'), Macro('MPI_STATUS_IGNORE')])
+            group[HALO] = [[rrecv, recv], [wait, scatter]]
 
     # Arrange send/recv into the most classical recv-send-wait pattern
+    body = []
     for (d, side), blocks in groups.items():
-        iet = blocks[HALO][0] + blocks[OWNED] + blocks[HALO][1]
         mask = Scalar(name='m%s%s' % (d, side.name[0]), dtype=np.int32)
-        cond = Conditional(mask, iet)
-        from IPython import embed; embed()
+        block = blocks[HALO][0] + blocks[OWNED] + blocks[HALO][1]
+        body.append(Conditional(mask, block))
+
+    # Build a Callable to invoke the newly-constructed halo exchange
+    body = List(body=body)
+    parameters = derive_parameters(body, drop_locals=True)
+    func = Callable('halo_exchange', body, 'void', parameters, ('static',))
+    from IPython import embed; embed()
