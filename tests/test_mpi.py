@@ -238,8 +238,8 @@ def test_ctypes_neighboors():
     }
 
     mapper = dict(zip(attrs, expected[distributor.nprocs][distributor.myrank]))
-    ctype, _ = distributor._C_neighbours
-    assert all(getattr(ctype, k) == v for k, v in mapper.items())
+    _, _, obj = distributor._C_neighbours
+    assert all(getattr(obj.value, k) == v for k, v in mapper.items())
 
 
 class TestCodeGeneration(object):
