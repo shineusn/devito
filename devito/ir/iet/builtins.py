@@ -3,7 +3,7 @@ from itertools import product
 from sympy import S
 import numpy as np
 
-from devito.dimension import DefaultDimension, IncrDimension
+from devito.dimension import DefaultDimension, Dimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
 from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Expression,
@@ -15,35 +15,24 @@ from devito.tools import is_integer
 __all__ = ['copy', 'halo_exchange']
 
 
-def copy(src, fixed):
+def copy(f):
     """
-    Construct a :class:`Callable` copying an arbitrary convex region of ``src``
-    into a contiguous :class:`Array`.
+    Construct a :class:`Callable` capable of copying an arbitrary convex
+    region of ``f`` into a contiguous :class:`Array`.
     """
-    src_indices = []
-    dst_indices = []
-    dst_shape = []
-    dst_dimensions = []
-    for d in src.dimensions:
-        dst_d = IncrDimension(d, S.Zero, S.One, name='dst_%s' % d)
-        dst_dimensions.append(dst_d)
-        if d in fixed:
-            src_indices.append(fixed[d])
-            dst_indices.append(0)
-            dst_shape.append(1)
-        else:
-            src_indices.append(d + Scalar(name='o%s' % d, dtype=np.int32))
-            dst_indices.append(dst_d)
-            dst_shape.append(dst_d)
-    dst = Array(name='dst', shape=dst_shape, dimensions=dst_dimensions)
-
-    # FIXME: somehow the halo/padding shouldn't appear here !!!!! or should they??
+    src_indices, dst_indices = [], []
+    src_dimensions, dst_dimensions = [], []
+    for d in f.dimensions:
+        dst_dimensions.append(Dimension(name='dst_%s' % d.root))
+        src_dimensions.append(Dimension(name='src_%s' % d.root))
+        src_indices.append(d.root + Scalar(name='o%s' % d.root, dtype=np.int32))
+        dst_indices.append(d.root)
+    src = Array(name='src', dimensions=src_dimensions)
+    dst = Array(name='dst', dimensions=dst_dimensions)
 
     iet = Expression(DummyEq(dst[dst_indices], src[src_indices]))
-    for sd, dd, s in reversed(list(zip(src.dimensions, dst.dimensions, dst.shape))):
-        if is_integer(s) or sd in fixed:
-            continue
-        iet = Iteration(iet, sd, s, uindices=dd)
+    for d, dd in reversed(list(zip(f.dimensions, dst.dimensions))):
+        iet = Iteration(iet, d.root, dd.symbolic_size)
     iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
     parameters = derive_parameters(iet)
     return Callable('copy', iet, 'void', parameters, ('static',))
