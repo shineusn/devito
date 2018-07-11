@@ -4,9 +4,8 @@ import pytest
 from conftest import skipif_yask
 
 from devito import Grid, Function, TimeFunction, Eq, Operator
-from devito.ir.iet import copy, mpi_exchange
+from devito.ir.iet import FindNodes, Conditional, printAST, copy, mpi_exchange
 from devito.distributed import LEFT, RIGHT
-from devito.types import Array
 
 
 @skipif_yask
@@ -264,14 +263,21 @@ class TestCodeGeneration(object):
     }
   }""" in str(iet)
 
-    def test_iet_halo_exchange(self):
+    def test_iet_halo_exchange_structure(self):
         grid = Grid(shape=(4, 4))
         t = grid.stepping_dim
 
         f = TimeFunction(name='f', grid=grid)
 
         iet = mpi_exchange(f, {t: 0})
-        from IPython import embed; embed()
+        assert str(iet.parameters) ==\
+"(f(t, x, y), mxl, mxr, myl, myr, comm, nb, t_size, x_size, y_size)"
+
+        conds = FindNodes(Conditional).visit(iet)
+        assert len(conds) == 4
+        assert all(printAST(i.then_body) == \
+"""<Definition>\n<Call>\n<Call>\n<Definition>\n<Call>\n<Call>\n<Call>\n<Call>"""
+                   for i in conds)
 
 
 if __name__ == "__main__":
