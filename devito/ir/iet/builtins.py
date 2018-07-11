@@ -4,13 +4,13 @@ from itertools import product
 from operator import mul
 
 import numpy as np
-from sympy import S, Symbol
+from sympy import S
 
 from devito.dimension import DefaultDimension, Dimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
 from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Definition,
-                                 Expression, Iteration, List)
+                                 Expression, Iteration, List, PointerCast)
 from devito.ir.iet.utils import derive_parameters
 from devito.symbolics import Byref, FieldFromPointer, Macro
 from devito.types import Array, Scalar, OWNED, HALO
@@ -107,7 +107,7 @@ def mpi_exchange(f, fixed):
         count = reduce(mul, array.symbolic_shape, 1)
         dtype = Macro(numpy_to_mpitypes(array.dtype))
         peer = FieldFromPointer("%s%s" % (d, side.name), nb.name)
-        mpi_args = [array, count, dtype, peer, Macro('MPI_ANY_TAG'), Symbol(comm.name)]
+        mpi_args = [array, count, dtype, peer, Macro('MPI_ANY_TAG'), comm]
 
         # Function calls (gather/scatter and send/recv)
         if region is OWNED:
@@ -131,7 +131,6 @@ def mpi_exchange(f, fixed):
         body.append(Conditional(mask, block))
 
     # Build a Callable to invoke the newly-constructed halo exchange
-    body = List(body=body)
+    body = List(body=([PointerCast(comm), PointerCast(nb)] + body))
     parameters = derive_parameters(body, drop_locals=True)
-    func = Callable('halo_exchange', body, 'void', parameters, ('static',))
-    from IPython import embed; embed()
+    return Callable('halo_exchange', body, 'void', parameters, ('static',))
