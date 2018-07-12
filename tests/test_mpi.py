@@ -4,7 +4,7 @@ import pytest
 from conftest import skipif_yask
 
 from devito import Grid, Function, TimeFunction, Eq, Operator
-from devito.ir.iet import FindNodes, Conditional, printAST, copy, mpi_exchange, sendrecv
+from devito.ir.iet import FindNodes, Conditional, printAST, copy, sendrecv, update_halo
 from devito.distributed import LEFT, RIGHT
 
 
@@ -289,13 +289,13 @@ MPI_Wait(&rsend,MPI_STATUS_IGNORE);
 scatter((float*)bufs,buf_time_size,buf_x_size,buf_y_size,ostime,osx,osy,\
 (float*)dat,dat_time_size,dat_x_size,dat_y_size);"""
 
-    def test_iet_halo_exchange_structure(self):
+    def test_iet_update_halo(self):
         grid = Grid(shape=(4, 4))
         t = grid.stepping_dim
 
         f = TimeFunction(name='f', grid=grid)
 
-        iet = mpi_exchange(f, {t: 0})
+        iet = update_halo(f, {t: 0})
         assert str(iet.parameters) ==\
 "(f(t, x, y), mxl, mxr, myl, myr, comm, nb, t_size, x_size, y_size)"
 
