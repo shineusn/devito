@@ -248,11 +248,9 @@ class TestCodeGeneration(object):
         f = TimeFunction(name='f', grid=grid)
 
         iet = copy(f)
-        from IPython import embed; embed()
         assert str(iet.parameters) ==\
-'(dst(dst_time, dst_x, dst_y), dst_time_size, dst_x_size, dst_y_size,\
- otime, ox, oy,\
- src(src_time, src_x, src_y), src_time_size, src_x_size, src_y_size)'
+"""(dst(dst_time, dst_x, dst_y), src(src_time, src_x, src_y), dst_time_size, dst_x_size,\
+ dst_y_size, otime, ox, oy, src_time_size, src_x_size, src_y_size)"""
         assert """for (int time = 0; time <= dst_time_size; time += 1)
   {
     for (int x = 0; x <= dst_x_size; x += 1)
@@ -281,14 +279,14 @@ float bufg[buf_time_size][buf_x_size][buf_y_size] __attribute__((aligned(64)));
 MPI_Request rsend;
 MPI_Irecv((float*)bufs,buf_time_size*buf_x_size*buf_y_size,MPI_FLOAT,fromrank,\
 MPI_ANY_TAG,*_comm,&rrecv);
-gather((float*)bufg,buf_time_size,buf_x_size,buf_y_size,ogtime,ogx,ogy,(float*)dat,\
+gather((float*)bufg,(float*)dat,buf_time_size,buf_x_size,buf_y_size,ogtime,ogx,ogy,\
 dat_time_size,dat_x_size,dat_y_size);
 MPI_Isend((float*)bufg,buf_time_size*buf_x_size*buf_y_size,MPI_FLOAT,torank,\
 MPI_ANY_TAG,*_comm,&rsend);
 MPI_Wait(&rrecv,MPI_STATUS_IGNORE);
 MPI_Wait(&rsend,MPI_STATUS_IGNORE);
-scatter((float*)bufs,buf_time_size,buf_x_size,buf_y_size,ostime,osx,osy,\
-(float*)dat,dat_time_size,dat_x_size,dat_y_size);"""
+scatter((float*)bufs,(float*)dat,buf_time_size,buf_x_size,buf_y_size,ostime,osx,osy,\
+dat_time_size,dat_x_size,dat_y_size);"""
 
 
 if __name__ == "__main__":

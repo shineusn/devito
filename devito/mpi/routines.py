@@ -44,7 +44,7 @@ def copy(f, swap=False):
     for d, dd in reversed(list(zip(f.dimensions, dst.dimensions))):
         iet = Iteration(iet, d.root, dd.symbolic_size)
     iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
-    parameters = derive_parameters(iet, drop_locals=True)
+    parameters = derive_parameters(iet)
     return Callable(name, iet, 'void', parameters, ('static',))
 
 
@@ -67,9 +67,9 @@ def sendrecv(f):
     ofsg = [Symbol(name='og%s' % d.root) for d in f.dimensions]
     ofss = [Symbol(name='os%s' % d.root) for d in f.dimensions]
 
-    params = [bufg] + list(bufg.symbolic_shape) + ofsg + [dat] + list(dat.symbolic_shape)
+    params = [bufg, dat] + list(bufg.symbolic_shape) + ofsg + list(dat.symbolic_shape)
     gather = Call('gather', params)
-    params = [bufs] + list(bufs.symbolic_shape) + ofss + [dat] + list(dat.symbolic_shape)
+    params = [bufs, dat] + list(bufs.symbolic_shape) + ofss + list(dat.symbolic_shape)
     scatter = Call('scatter', params)
 
     fromrank = Symbol(name='fromrank')
@@ -91,7 +91,6 @@ def sendrecv(f):
     iet = List(body=[recv, gather, send, waitrecv, waitsend, scatter])
     iet = iet_insert_C_decls(iet)
     parameters = derive_parameters(iet, drop_locals=True)
-    from IPython import embed; embed()
     return Callable('sendrecv', iet, 'void', parameters, ('static',))
 
 
