@@ -166,7 +166,7 @@ def optimize_unfolded_tree(unfolded, root):
                 if j.write.is_Array:
                     j_dimensions = dimensions + j.write.dimensions[len(modified_root):]
                     j_shape = tuple(k.symbolic_size for k in j_dimensions)
-                    j.write.update(shape=j_shape, dimensions=j_dimensions, onstack=True)
+                    j.write.update(shape=j_shape, dimensions=j_dimensions, scope='stack')
 
         # Substitute iteration variables within the folded trees
         modified_tree = compose_nodes(modified_tree)
