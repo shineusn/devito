@@ -289,22 +289,6 @@ MPI_Wait(&rsend,MPI_STATUS_IGNORE);
 scatter((float*)bufs,buf_time_size,buf_x_size,buf_y_size,ostime,osx,osy,\
 (float*)dat,dat_time_size,dat_x_size,dat_y_size);"""
 
-    def test_iet_update_halo(self):
-        grid = Grid(shape=(4, 4))
-        t = grid.stepping_dim
-
-        f = TimeFunction(name='f', grid=grid)
-
-        iet = update_halo(f, {t: 0})
-        assert str(iet.parameters) ==\
-"(f(t, x, y), mxl, mxr, myl, myr, comm, nb, t_size, x_size, y_size)"
-
-        conds = FindNodes(Conditional).visit(iet)
-        assert len(conds) == 4
-        assert all(printAST(i.then_body) == \
-"""<Definition>\n<Call>\n<Call>\n<Definition>\n<Call>\n<Call>\n<Call>\n<Call>"""
-                   for i in conds)
-
 
 if __name__ == "__main__":
     test_ctypes_neighboors()
