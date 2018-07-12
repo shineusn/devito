@@ -2,6 +2,7 @@ from collections import OrderedDict
 from functools import reduce
 from itertools import product
 from operator import mul
+from ctypes import c_void_p
 
 import numpy as np
 from sympy import S
@@ -9,14 +10,15 @@ from sympy import S
 from devito.dimension import DefaultDimension, Dimension
 from devito.distributed import LEFT, RIGHT
 from devito.ir.equations import DummyEq
-from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional, Definition,
+from devito.ir.iet.nodes import (ArrayCast, Call, Callable, Conditional,
                                  Expression, Iteration, List, PointerCast)
+from devito.ir.iet.scheduler import iet_insert_C_decls
 from devito.ir.iet.utils import derive_parameters
 from devito.symbolics import Byref, FieldFromPointer, Macro
-from devito.types import Array, Scalar, OWNED, HALO
+from devito.types import Array, Symbol, LocalObject, OWNED, HALO
 from devito.tools import is_integer, numpy_to_mpitypes
 
-__all__ = ['copy', 'mpi_exchange']
+__all__ = ['copy', 'sendrecv', 'mpi_exchange']
 
 
 def copy(f, swap=False):
@@ -32,7 +34,7 @@ def copy(f, swap=False):
     for d in f.dimensions:
         dst_dimensions.append(Dimension(name='dst_%s' % d.root))
         src_dimensions.append(Dimension(name='src_%s' % d.root))
-        src_indices.append(d.root + Scalar(name='o%s' % d.root, dtype=np.int32))
+        src_indices.append(d.root + Symbol(name='o%s' % d.root))
         dst_indices.append(d.root)
     src = Array(name='src', dimensions=src_dimensions, dtype=f.dtype)
     dst = Array(name='dst', dimensions=dst_dimensions, dtype=f.dtype)
@@ -48,8 +50,54 @@ def copy(f, swap=False):
     for d, dd in reversed(list(zip(f.dimensions, dst.dimensions))):
         iet = Iteration(iet, d.root, dd.symbolic_size)
     iet = List(body=[ArrayCast(src), ArrayCast(dst), iet])
-    parameters = derive_parameters(iet)
+    parameters = derive_parameters(iet, drop_locals=True)
     return Callable(name, iet, 'void', parameters, ('static',))
+
+
+def sendrecv(f):
+    """Construct an IET performing a halo exchange along arbitrary
+    dimension and side."""
+    assert f.is_Function
+    assert f.grid is not None
+
+    comm = f.grid.distributor._C_comm
+
+    buf_dimensions = [Dimension(name='buf_%s' % d.root) for d in f.dimensions]
+    bufg = Array(name='bufg', dimensions=buf_dimensions, dtype=f.dtype, scope='stack')
+    bufs = Array(name='bufs', dimensions=buf_dimensions, dtype=f.dtype, scope='stack')
+
+    dat_dimensions = [Dimension(name='dat_%s' % d.root) for d in f.dimensions]
+    dat = Array(name='dat', dimensions=dat_dimensions, dtype=f.dtype,
+                scope='external')
+
+    ofsg = [Symbol(name='og%s' % d.root) for d in f.dimensions]
+    ofss = [Symbol(name='os%s' % d.root) for d in f.dimensions]
+
+    params = [bufg] + list(bufg.symbolic_shape) + ofsg + [dat] + list(dat.symbolic_shape)
+    gather = Call('gather', params)
+    params = [bufs] + list(bufs.symbolic_shape) + ofss + [dat] + list(dat.symbolic_shape)
+    scatter = Call('scatter', params)
+
+    fromrank = Symbol(name='fromrank')
+    torank = Symbol(name='torank')
+
+    MPI_Request = type('MPI_Request', (c_void_p,), {})
+    rrecv = LocalObject(name='rrecv', dtype=MPI_Request)
+    rsend = LocalObject(name='rsend', dtype=MPI_Request)
+
+    count = reduce(mul, bufs.symbolic_shape, 1)
+    recv = Call('MPI_Irecv', [bufs, count, Macro(numpy_to_mpitypes(f.dtype)),
+                              fromrank, Macro('MPI_ANY_TAG'), comm, rrecv])
+    send = Call('MPI_Isend', [bufg, count, Macro(numpy_to_mpitypes(f.dtype)),
+                              torank, Macro('MPI_ANY_TAG'), comm, rsend])
+
+    waitrecv = Call('MPI_Wait', [rrecv, Macro('MPI_STATUS_IGNORE')])
+    waitsend = Call('MPI_Wait', [rsend, Macro('MPI_STATUS_IGNORE')])
+
+    iet = List(body=[recv, gather, send, waitrecv, waitsend, scatter])
+    iet = iet_insert_C_decls(iet)
+    parameters = derive_parameters(iet, drop_locals=True)
+    return Callable('sendrecv', iet, 'void', parameters, ('static',))
 
 
 def mpi_exchange(f, fixed):
