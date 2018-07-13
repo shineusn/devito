@@ -36,10 +36,10 @@ def copy(f, swap=False):
 
     if swap is False:
         eq = DummyEq(dst[dst_indices], src[src_indices])
-        name = 'gather'
+        name = 'gather_%s' % f.name
     else:
         eq = DummyEq(src[src_indices], dst[dst_indices])
-        name = 'scatter'
+        name = 'scatter_%s' % f.name
 
     iet = Expression(eq)
     for d, dd in reversed(list(zip(f.dimensions, dst.dimensions))):
@@ -93,7 +93,7 @@ def sendrecv(f):
     iet = iet_insert_C_decls(iet)
     parameters = ([dat] + list(dat.shape) + list(bufs.shape) +
                   ofsg + ofss + [fromrank, torank, comm])
-    return Callable('sendrecv', iet, 'void', parameters, ('static',))
+    return Callable('sendrecv_%s' % f.name, iet, 'void', parameters, ('static',))
 
 
 def update_halo(f, fixed):
@@ -140,4 +140,4 @@ def update_halo(f, fixed):
 
     iet = List(body=([PointerCast(comm), PointerCast(nb)] + body))
     parameters = derive_parameters(iet, drop_locals=True)
-    return Callable('halo_exchange', iet, 'void', parameters, ('static',))
+    return Callable('halo_exchange_%s' % f.name, iet, 'void', parameters, ('static',))
