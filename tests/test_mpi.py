@@ -248,8 +248,8 @@ class TestCodeGeneration(object):
         f = TimeFunction(name='f', grid=grid)
 
         iet = copy(f)
-        assert str(iet.parameters) ==\
-"""(dst(dst_time, dst_x, dst_y), src(src_time, src_x, src_y), dst_time_size, dst_x_size,\
+        assert str(iet.parameters) == """\
+(dst(dst_time, dst_x, dst_y), src(src_time, src_x, src_y), dst_time_size, dst_x_size,\
  dst_y_size, otime, ox, oy, src_time_size, src_x_size, src_y_size)"""
         assert """for (int time = 0; time <= dst_time_size; time += 1)
   {
@@ -268,12 +268,11 @@ class TestCodeGeneration(object):
         f = TimeFunction(name='f', grid=grid)
 
         iet = sendrecv(f)
-        assert str(iet.parameters) ==\
-'(dat(dat_time, dat_x, dat_y), buf_time_size, buf_x_size, buf_y_size, comm,\
- dat_time_size, dat_x_size, dat_y_size, fromrank, ogtime, ogx, ogy, ostime,\
- osx, osy, torank)'
-        assert str(iet.body[0]) ==\
-"""float bufs[buf_time_size][buf_x_size][buf_y_size] __attribute__((aligned(64)));
+        assert str(iet.parameters) == """\
+(dat(dat_time, dat_x, dat_y), dat_time_size, dat_x_size, dat_y_size, buf_time_size,\
+ buf_x_size, buf_y_size, ogtime, ogx, ogy, ostime, osx, osy, fromrank, torank, comm)"""
+        assert str(iet.body[0]) == """\
+float bufs[buf_time_size][buf_x_size][buf_y_size] __attribute__((aligned(64)));
 MPI_Request rrecv;
 float bufg[buf_time_size][buf_x_size][buf_y_size] __attribute__((aligned(64)));
 MPI_Request rsend;
