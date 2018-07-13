@@ -3,8 +3,10 @@ from __future__ import absolute_import
 from devito.core.autotuning import autotune
 from devito.cgen_utils import printmark
 from devito.equation import Eq
-from devito.ir.iet import List, Transformer, filter_iterations, retrieve_iteration_tree
+from devito.ir.iet import (List, Transformer, FindNodes, HaloSpot,
+                           filter_iterations, retrieve_iteration_tree)
 from devito.ir.support import align_accesses
+from devito.mpi import * 
 from devito.operator import OperatorRunnable
 from devito.types import Array
 from devito.tools import flatten
@@ -21,11 +23,11 @@ class OperatorCore(OperatorRunnable):
         return super(OperatorCore, self)._specialize_exprs(expressions)
 
     def _generate_mpi(self, iet, **kwargs):
-        if kwargs.get('skip_mpi'):
-            return iet
-        # First, generate the `update_halo` functions
-        for i in self.input:
-            pass
+#        mapper = {}
+#        halo_spots = FindNodes(HaloSpot).visit(iet)
+#        for i in halo_spots:
+#            from IPython import embed; embed()
+
         return iet
 
     def _autotune(self, args):
