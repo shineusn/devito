@@ -44,7 +44,7 @@ def derive_halo_updates(dspace):
     dmapper = {}
     fmapper = {}
     for k, v in dspace.parts.items():
-        if k.grid is None:
+        if not k.is_TensorFunction or k.grid is None:
             continue
         for i in v:
             if i.dim not in k.grid.distributor.dimensions:
