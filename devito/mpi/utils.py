@@ -1,9 +1,10 @@
 from collections import OrderedDict
 from itertools import product
 
+from devito.ir.support import Forward
 from devito.types import OWNED, HALO, LEFT, RIGHT
 
-__all__ = ['get_views', 'derive_halo_updates']
+__all__ = ['get_views', 'derive_halo_scheme']
 
 
 def get_views(f, fixed):
@@ -32,29 +33,39 @@ def get_views(f, fixed):
     return mapper
 
 
-def derive_halo_updates(dspace):
+def derive_halo_scheme(dspace, directions):
     """
-    Given a :class:`DataSpace`, return two mappers: ::
+    Given a :class:`DataSpace`, return three mappers: ::
 
         * ``dimension -> [(function, side, amount), ...]}``
         * ``function -> [(dimension, side, amount), ...]
+        * ``dimension -> dimension``.
 
-    describing what halo exchanges are required.
+    The first two mappers describe what halo exchanges are required. The last
+    mapper tells how to access dimensions that need no halo exchange.
     """
     dmapper = {}
     fmapper = {}
-    for k, v in dspace.parts.items():
-        if not k.is_TensorFunction or k.grid is None:
+    fixed = {}
+    for f, v in dspace.parts.items():
+        if not f.is_TensorFunction or f.grid is None:
             continue
-        for i in v:
-            if i.dim not in k.grid.distributor.dimensions:
+        for d in f.dimensions:
+            if v[d.root].is_Null:
                 continue
-            lsize = k._offset_domain[i.dim].left - i.lower
-            if lsize > 0:
-                dmapper.setdefault(i.dim, []).append((k, LEFT, lsize))
-                fmapper.setdefault(k, []).append((i.dim, LEFT, lsize))
-            rsize = i.upper - k._offset_domain[i.dim].right
-            if rsize > 0:
-                dmapper.setdefault(i.dim, []).append((k, RIGHT, rsize))
-                fmapper.setdefault(k, []).append((i.dim, RIGHT, rsize))
-    return dmapper, fmapper
+            elif d in f.grid.distributor.dimensions:
+                lsize = f._offset_domain[d].left - v[d].lower
+                if lsize > 0:
+                    dmapper.setdefault(d, []).append((f, LEFT, lsize))
+                    fmapper.setdefault(f, []).append((d, LEFT, lsize))
+                rsize = v[d].upper - f._offset_domain[d].right
+                if rsize > 0:
+                    dmapper.setdefault(d, []).append((f, RIGHT, rsize))
+                    fmapper.setdefault(f, []).append((d, RIGHT, rsize))
+            elif d.root in directions:
+                if v[d.root] is Forward:
+                    last = dspace[d.root].upper - 1
+                else:
+                    last = dspace[d.root].lower + 1
+                fixed[d] = d + last
+    return dmapper, fmapper, fixed

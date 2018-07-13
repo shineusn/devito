@@ -23,14 +23,14 @@ class OperatorCore(OperatorRunnable):
         return super(OperatorCore, self)._specialize_exprs(expressions)
 
     def _generate_mpi(self, iet, **kwargs):
-#        # For each function, generate all necessary C-level routines to perform
-#        # a halo exchange
-#        mapper = {}
-#        callables = []
-#        halo_spots = FindNodes(HaloSpot).visit(iet)
-#        for hs in halo_spots:
-#            for k, v in hs.halo_updates.items():
-#                callables.extend(copy(f), sendrecv(f), update_halo(f, fixed))
+        # For each function, generate all necessary C-level routines to perform
+        # a halo exchange
+        mapper = {}
+        callables = []
+        halo_spots = FindNodes(HaloSpot).visit(iet)
+        for hs in halo_spots:
+            for f, v in hs.halo_updates.items():
+                callables.extend(copy(f), sendrecv(f), update_halo(f, hs.fixed))
 #
 #        # Generate all support routines
 #        #self._func_table.update(OrderedDict([(i.name, )]))
