@@ -96,7 +96,7 @@ def sendrecv(f, fixed):
     waitsend = Call('MPI_Wait', [rsend, Macro('MPI_STATUS_IGNORE')])
 
     iet = List(body=[recv, gather, send, waitrecv, waitsend, scatter])
-    iet = iet_insert_C_decls(iet)
+    iet = List(body=[PointerCast(comm), ArrayCast(dat), iet_insert_C_decls(iet)])
     parameters = ([dat] + list(dat.shape) + list(bufs.shape) +
                   ofsg + ofss + [fromrank, torank, comm])
     return Callable('sendrecv_%s' % f.name, iet, 'void', parameters, ('static',))
@@ -133,7 +133,7 @@ def update_halo(f, fixed):
         sizes = lsizes
         parameters = ([f] + list(f.symbolic_shape) + sizes + loffsets +
                       roffsets + [rpeer, lpeer, comm])
-        call = Call('sendrecv', parameters)
+        call = Call('sendrecv_%s' % f.name, parameters)
         body.append(Conditional(Symbol(name='m%sl' % d), call))
 
         # Sending to right, receiving from left
@@ -143,7 +143,7 @@ def update_halo(f, fixed):
         sizes = rsizes
         parameters = ([f] + list(f.symbolic_shape) + sizes + roffsets +
                       loffsets + [lpeer, rpeer, comm])
-        call = Call('sendrecv', parameters)
+        call = Call('sendrecv_%s' % f.name, parameters)
         body.append(Conditional(Symbol(name='m%sr' % d), call))
 
     iet = List(body=([PointerCast(comm), PointerCast(nb)] + body))

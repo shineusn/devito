@@ -2,13 +2,12 @@ from collections import OrderedDict
 
 from devito.core.autotuning import autotune
 from devito.cgen_utils import printmark
-from devito.equation import Eq
 from devito.ir.iet import (List, Transformer, FindNodes, HaloSpot, MetaCall,
                            filter_iterations, retrieve_iteration_tree)
 from devito.ir.support import align_accesses
-from devito.mpi import copy, sendrecv, update_halo 
+from devito.parameters import configuration
+from devito.mpi import copy, sendrecv, update_halo
 from devito.operator import OperatorRunnable
-from devito.types import Array
 from devito.tools import flatten
 
 __all__ = ['Operator']
@@ -23,18 +22,32 @@ class OperatorCore(OperatorRunnable):
         return super(OperatorCore, self)._specialize_exprs(expressions)
 
     def _generate_mpi(self, iet, **kwargs):
+        if configuration['mpi'] is False:
+            return iet
+
         # For each function, generate all necessary C-level routines to perform
         # a halo exchange
-        mapper = {}
         callables = []
+        cstructs = set()
         halo_spots = FindNodes(HaloSpot).visit(iet)
         for hs in halo_spots:
             for f, v in hs.halo_updates.items():
-                callables.extend(copy(f), sendrecv(f), update_halo(f, hs.fixed))
-#
-#        # Generate all support routines
-#        #self._func_table.update(OrderedDict([(i.name, )]))
-#        from IPython import embed; embed()
+                callables.extend([copy(f, hs.fixed), copy(f, hs.fixed, True)])
+                callables.append(sendrecv(f, hs.fixed))
+                callables.append(update_halo(f, hs.fixed))
+
+                cstructs.add(f.grid.distributor._C_neighbours.cdef)
+
+        self._func_table.update(OrderedDict([(i.name, MetaCall(i, True))
+                                             for i in callables]))
+
+        # Sorting is for deterministic code generation. However, in practice,
+        # we don't expect `cstructs` to contain more than one element because
+        # there should always be one grid per Operator (though we're not really
+        # enforcing this)
+        self._globals.extend(sorted(cstructs, key=lambda i: i.tpname))
+
+        self._includes.append('mpi.h')
 
         return iet
 

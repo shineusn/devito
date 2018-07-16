@@ -5,7 +5,16 @@ from conftest import skipif_yask
 
 from devito import Grid, Function, TimeFunction, Eq, Operator
 from devito.mpi import copy, sendrecv, update_halo
+from devito.parameters import configuration
 from devito.types import LEFT, RIGHT
+
+
+def setup_module(module):
+    configuration['mpi'] = True
+
+
+def teardown_module(module):
+    configuration['mpi'] = False
 
 
 @skipif_yask
@@ -273,6 +282,9 @@ class TestCodeGeneration(object):
 (dat(dat_time, dat_x, dat_y), dat_time_size, dat_x_size, dat_y_size,\
  buf_x_size, buf_y_size, ogtime, ogx, ogy, ostime, osx, osy, fromrank, torank, comm)"""
         assert str(iet.body[0]) == """\
+MPI_Comm *comm = (MPI_Comm*) _comm;
+float (*restrict dat)[dat_x_size][dat_y_size] __attribute__((aligned(64))) =\
+ (float (*)[dat_x_size][dat_y_size]) dat_vec;
 float bufs[buf_x_size][buf_y_size] __attribute__((aligned(64)));
 MPI_Request rrecv;
 float bufg[buf_x_size][buf_y_size] __attribute__((aligned(64)));
@@ -302,20 +314,35 @@ MPI_Comm *comm = (MPI_Comm*) _comm;
 struct neighbours *nb = (struct neighbours*) _nb;
 if (mxl)
 {
-  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,otime,1,0,otime,x_size + 1,0,nb->xright,nb->xleft,*_comm);
+  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,\
+otime,1,0,otime,x_size + 1,0,nb->xright,nb->xleft,*_comm);
 }
 if (mxr)
 {
-  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,otime,x_size,0,otime,0,0,nb->xleft,nb->xright,*_comm);
+  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,\
+otime,x_size,0,otime,0,0,nb->xleft,nb->xright,*_comm);
 }
 if (myl)
 {
-  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,otime,0,1,otime,0,y_size + 1,nb->yright,nb->yleft,*_comm);
+  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,\
+otime,0,1,otime,0,y_size + 1,nb->yright,nb->yleft,*_comm);
 }
 if (myr)
 {
-  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,otime,0,y_size,otime,0,0,nb->yleft,nb->yright,*_comm);
+  sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,\
+otime,0,y_size,otime,0,0,nb->yleft,nb->yright,*_comm);
 }"""
+
+    def test_iet_simple_operator(self):
+        grid = Grid(shape=(10,))
+        x = grid.dimensions[0]
+        t = grid.stepping_dim
+
+        f = TimeFunction(name='f', grid=grid)
+        f.data[:] = 0.
+
+        op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
+        op.apply(time=1)
 
 
 if __name__ == "__main__":
