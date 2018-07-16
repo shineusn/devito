@@ -20,7 +20,6 @@ def get_views(f, fixed):
         offsets = []
         for d, i in zip(f.dimensions, f.symbolic_shape):
             if d in fixed:
-                sizes.append(1)
                 offsets.append(fixed[d])
             elif dimension is d:
                 offset, extent = f._get_region(region, dimension, side, True)
@@ -51,21 +50,19 @@ def derive_halo_scheme(dspace, directions):
         if not f.is_TensorFunction or f.grid is None:
             continue
         for d in f.dimensions:
-            if v[d.root].is_Null:
+            r = d.root
+            if v[r].is_Null:
                 continue
             elif d in f.grid.distributor.dimensions:
-                lsize = f._offset_domain[d].left - v[d].lower
+                lsize = f._offset_domain[d].left - v[r].lower
                 if lsize > 0:
                     dmapper.setdefault(d, []).append((f, LEFT, lsize))
                     fmapper.setdefault(f, []).append((d, LEFT, lsize))
-                rsize = v[d].upper - f._offset_domain[d].right
+                rsize = v[r].upper - f._offset_domain[d].right
                 if rsize > 0:
                     dmapper.setdefault(d, []).append((f, RIGHT, rsize))
                     fmapper.setdefault(f, []).append((d, RIGHT, rsize))
-            elif d.root in directions:
-                if v[d.root] is Forward:
-                    last = dspace[d.root].upper - 1
-                else:
-                    last = dspace[d.root].lower + 1
+            elif r in directions:
+                last = (dspace[r].upper - 1) if v[r] is Forward else (dspace[r].lower + 1)
                 fixed[d] = d + last
     return dmapper, fmapper, fixed
