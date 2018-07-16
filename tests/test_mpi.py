@@ -250,6 +250,7 @@ def test_ctypes_neighboors():
     assert all(getattr(obj.value, k) == v for k, v in mapper.items())
 
 
+@skipif_yask
 class TestCodeGeneration(object):
 
     def test_iet_copy(self):
@@ -290,11 +291,11 @@ MPI_Request rrecv;
 float bufg[buf_x_size][buf_y_size] __attribute__((aligned(64)));
 MPI_Request rsend;
 MPI_Irecv((float*)bufs,buf_x_size*buf_y_size,MPI_FLOAT,fromrank,\
-MPI_ANY_TAG,*_comm,&rrecv);
+MPI_ANY_TAG,comm,&rrecv);
 gather_f((float*)bufg,buf_x_size,buf_y_size,(float*)dat,dat_time_size,dat_x_size,\
 dat_y_size,ogtime,ogx,ogy);
 MPI_Isend((float*)bufg,buf_x_size*buf_y_size,MPI_FLOAT,torank,\
-MPI_ANY_TAG,*_comm,&rsend);
+MPI_ANY_TAG,comm,&rsend);
 MPI_Wait(&rrecv,MPI_STATUS_IGNORE);
 MPI_Wait(&rsend,MPI_STATUS_IGNORE);
 scatter_f((float*)bufs,buf_x_size,buf_y_size,(float*)dat,dat_time_size,dat_x_size,\
@@ -315,34 +316,36 @@ struct neighbours *nb = (struct neighbours*) _nb;
 if (mxl)
 {
   sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,\
-otime,1,0,otime,x_size + 1,0,nb->xright,nb->xleft,*_comm);
+otime,1,0,otime,x_size + 1,0,nb->xright,nb->xleft,comm);
 }
 if (mxr)
 {
   sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,1,y_size + 1 + 1,\
-otime,x_size,0,otime,0,0,nb->xleft,nb->xright,*_comm);
+otime,x_size,0,otime,0,0,nb->xleft,nb->xright,comm);
 }
 if (myl)
 {
   sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,\
-otime,0,1,otime,0,y_size + 1,nb->yright,nb->yleft,*_comm);
+otime,0,1,otime,0,y_size + 1,nb->yright,nb->yleft,comm);
 }
 if (myr)
 {
   sendrecv(f_vec,time_size,x_size + 1 + 1,y_size + 1 + 1,x_size + 1 + 1,1,\
-otime,0,y_size,otime,0,0,nb->yleft,nb->yright,*_comm);
+otime,0,y_size,otime,0,0,nb->yleft,nb->yright,comm);
 }"""
 
-    def test_iet_simple_operator(self):
-        grid = Grid(shape=(10,))
-        x = grid.dimensions[0]
-        t = grid.stepping_dim
 
-        f = TimeFunction(name='f', grid=grid)
-        f.data[:] = 0.
+@skipif_yask
+def test_iet_simple_operator():
+    grid = Grid(shape=(10,))
+    x = grid.dimensions[0]
+    t = grid.stepping_dim
 
-        op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
-        op.apply(time=1)
+    f = TimeFunction(name='f', grid=grid)
+    f.data[:] = 0.
+
+    op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
+    op.apply(time=1)
 
 
 if __name__ == "__main__":
