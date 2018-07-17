@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 from devito.core.autotuning import autotune
 from devito.cgen_utils import printmark
-from devito.ir.iet import (List, Transformer, FindNodes, HaloSpot, MetaCall,
+from devito.ir.iet import (List, Transformer, FindNodes, HaloSpot, Call, MetaCall,
                            filter_iterations, retrieve_iteration_tree)
 from devito.ir.support import align_accesses
 from devito.parameters import configuration
@@ -27,6 +27,7 @@ class OperatorCore(OperatorRunnable):
 
         # For each function, generate all necessary C-level routines to perform
         # a halo exchange
+        calls = []
         callables = []
         cstructs = set()
         halo_spots = FindNodes(HaloSpot).visit(iet)
@@ -35,6 +36,15 @@ class OperatorCore(OperatorRunnable):
                 callables.extend([copy(f, hs.fixed), copy(f, hs.fixed, True)])
                 callables.append(sendrecv(f, hs.fixed))
                 callables.append(update_halo(f, hs.fixed))
+
+                stencil = [1]*len(v)  # FIXME
+                fixed = list(hs.fixed.values())  # FIXME
+                comm = f.grid.distributor._C_comm
+                nb = f.grid.distributor._C_neighbours.obj
+                dsizes = [d.symbolic_size for d in f.dimensions]
+                parameters = [f] + stencil + [comm, nb] + fixed + dsizes
+                calls.append(Call('update_halo_%s' % f.name, parameters))
+                from IPython import embed; embed()
 
                 cstructs.add(f.grid.distributor._C_neighbours.cdef)
 
