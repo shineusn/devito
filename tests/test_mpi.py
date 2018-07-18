@@ -345,7 +345,6 @@ def test_iet_simple_operator():
 
     op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
     print(op)
-    from IPython import embed; embed()
     op.apply(time=1)
     from IPython import embed; embed()
 

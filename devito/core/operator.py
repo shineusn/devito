@@ -42,7 +42,7 @@ class OperatorCore(OperatorRunnable):
                 fixed = list(hs.fixed[f].values())
                 dsizes = [d.symbolic_size for d in f.dimensions]
                 parameters = [f] + stencil + [comm, nb] + fixed + dsizes
-                call = Call('update_halo_%s' % f.name, parameters)
+                call = Call('halo_exchange_%s' % f.name, parameters)
                 mapper.setdefault(hs, []).append(call)
 
                 cstructs.add(f.grid.distributor._C_neighbours.cdef)
