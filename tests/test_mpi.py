@@ -341,13 +341,11 @@ def test_iet_simple_operator():
     t = grid.stepping_dim
 
     f = TimeFunction(name='f', grid=grid)
-    f.data[:] = 0.
+    f.data[:] = 1.
 
     op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
-    print(op)
-    op.apply(time=1)
-    from IPython import embed; embed()
+    op.apply(time=0)
 
 
 if __name__ == "__main__":
-    test_ctypes_neighboors()
+    test_iet_simple_operator()
