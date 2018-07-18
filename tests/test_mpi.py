@@ -334,7 +334,7 @@ otime,0,y_size,otime,0,0,nb->yleft,nb->yright,comm);
 }"""
 
 
-#@skipif_yask
+@skipif_yask
 def test_iet_simple_operator():
     grid = Grid(shape=(10,))
     x = grid.dimensions[0]
@@ -347,6 +347,7 @@ def test_iet_simple_operator():
     print(op)
     from IPython import embed; embed()
     op.apply(time=1)
+    from IPython import embed; embed()
 
 
 if __name__ == "__main__":

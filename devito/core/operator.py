@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 from devito.core.autotuning import autotune
 from devito.cgen_utils import printmark
-from devito.ir.iet import (List, Transformer, FindNodes, HaloSpot, Call, MetaCall,
+from devito.ir.iet import (Call, List, HaloSpot, MetaCall, FindNodes, Transformer,
                            filter_iterations, retrieve_iteration_tree)
 from devito.ir.support import align_accesses
 from devito.parameters import configuration
@@ -27,24 +27,23 @@ class OperatorCore(OperatorRunnable):
 
         # For each function, generate all necessary C-level routines to perform
         # a halo exchange
-        calls = []
+        mapper = {}
         callables = []
         cstructs = set()
-        halo_spots = FindNodes(HaloSpot).visit(iet)
-        for hs in halo_spots:
-            for f, v in hs.halo_updates.items():
-                callables.extend([copy(f, hs.fixed), copy(f, hs.fixed, True)])
-                callables.append(sendrecv(f, hs.fixed))
-                callables.append(update_halo(f, hs.fixed))
+        for hs in FindNodes(HaloSpot).visit(iet):
+            for f, v in hs.fmapper.items():
+                callables.extend([copy(f, hs.fixed[f]), copy(f, hs.fixed[f], True)])
+                callables.append(sendrecv(f, hs.fixed[f]))
+                callables.append(update_halo(f, hs.fixed[f]))
 
-                stencil = [1]*len(v)  # FIXME
-                fixed = list(hs.fixed.values())  # FIXME
+                stencil = [int(i) for i in hs.mask[f].values()]
                 comm = f.grid.distributor._C_comm
                 nb = f.grid.distributor._C_neighbours.obj
+                fixed = list(hs.fixed[f].values())
                 dsizes = [d.symbolic_size for d in f.dimensions]
                 parameters = [f] + stencil + [comm, nb] + fixed + dsizes
-                calls.append(Call('update_halo_%s' % f.name, parameters))
-                from IPython import embed; embed()
+                call = Call('update_halo_%s' % f.name, parameters)
+                mapper.setdefault(hs, []).append(call)
 
                 cstructs.add(f.grid.distributor._C_neighbours.cdef)
 
@@ -58,6 +57,10 @@ class OperatorCore(OperatorRunnable):
         self._globals.extend(sorted(cstructs, key=lambda i: i.tpname))
 
         self._includes.append('mpi.h')
+
+        # Add in the halo update calls
+        mapper = {k: List(body=v + list(k.body)) for k, v in mapper.items()}
+        iet = Transformer(mapper).visit(iet)
 
         return iet
 
