@@ -1,5 +1,5 @@
 from collections import namedtuple
-from ctypes import Structure, POINTER, c_int, c_void_p, sizeof
+from ctypes import Structure, POINTER, byref, c_int, c_void_p, sizeof
 from itertools import product
 
 from cached_property import cached_property
@@ -135,7 +135,7 @@ class Distributor(object):
         # The ctypes type
         entries = list(product(self.dimensions, [LEFT, RIGHT]))
         fields = [('%s%s' % (d, i), c_int) for d, i in entries]
-        ctype = POINTER(type('neighbours', (Structure,), {"_fields_": fields}))
+        ctype = type('neighbours', (Structure,), {"_fields_": fields})
         # Populate the struct
         value = ctype()
         neighbours = self.neighbours
@@ -145,7 +145,7 @@ class Distributor(object):
         # The corresponding struct in C
         cdef = Struct('neighbours', [Value('int', i) for i, _ in fields])
         # The corresponding types.Object
-        obj = Object(name='nb', dtype=ctype, value=value)
+        obj = Object(name='nb', dtype=POINTER(ctype), value=byref(value))
         return CNeighbours(ctype, cdef, obj)
 
     def __repr__(self):

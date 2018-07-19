@@ -343,8 +343,12 @@ def test_iet_simple_operator():
     f = TimeFunction(name='f', grid=grid)
     f.data[:] = 1.
 
+    print (f.data_ro_with_halo)
+
     op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
     op.apply(time=0)
+
+    print (f.data)
 
 
 if __name__ == "__main__":
