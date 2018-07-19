@@ -32,9 +32,9 @@ class OperatorCore(OperatorRunnable):
         cstructs = set()
         for hs in FindNodes(HaloSpot).visit(iet):
             for f, v in hs.fmapper.items():
-                callables.extend([copy(f, hs.fixed[f]), copy(f, hs.fixed[f], True)])
-                callables.append(sendrecv(f, hs.fixed[f]))
                 callables.append(update_halo(f, hs.fixed[f]))
+                callables.append(sendrecv(f, hs.fixed[f]))
+                callables.extend([copy(f, hs.fixed[f]), copy(f, hs.fixed[f], True)])
 
                 stencil = [int(i) for i in hs.mask[f].values()]
                 comm = f.grid.distributor._C_comm
