@@ -135,17 +135,18 @@ class Distributor(object):
         # The ctypes type
         entries = list(product(self.dimensions, [LEFT, RIGHT]))
         fields = [('%s%s' % (d, i), c_int) for d, i in entries]
-        ctype = type('neighbours', (Structure,), {"_fields_": fields})
+        ctype = POINTER(type('neighbours', (Structure,), {"_fields_": fields}))
         # Populate the struct
-        value = ctype()
+        value = ctype._type_()
         neighbours = self.neighbours
         for d, i in entries:
             setattr(value, '%s%s' % (d, i),
                     neighbours[d][i] if neighbours[d][i] is not None else -1)
+        value = byref(value)
         # The corresponding struct in C
         cdef = Struct('neighbours', [Value('int', i) for i, _ in fields])
         # The corresponding types.Object
-        obj = Object(name='nb', dtype=POINTER(ctype), value=byref(value))
+        obj = Object(name='nb', dtype=ctype, value=value)
         return CNeighbours(ctype, cdef, obj)
 
     def __repr__(self):
