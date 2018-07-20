@@ -341,14 +341,19 @@ def test_iet_simple_operator():
     t = grid.stepping_dim
 
     f = TimeFunction(name='f', grid=grid)
-    f.data[:] = 1.
-
-    print (f.data_ro_with_halo)
+    f.data_with_halo[:] = 1.
 
     op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
-    op.apply(time=0)
+    op.apply(time=1)
 
-    print (f.data)
+    assert np.all(f.data_ro_domain[0] == 7.)
+    assert np.all(f.data_ro_domain[1] == 3.)
+    if f.grid.distributor.myrank == 0:
+        assert f.data_ro_with_halo[0, -1] == 4
+        assert f.data_ro_with_halo[1, -1] == 3
+    else:
+        assert f.data_ro_with_halo[0, 0] == 4
+        assert f.data_ro_with_halo[1, 0] == 3
 
 
 if __name__ == "__main__":

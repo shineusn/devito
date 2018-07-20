@@ -125,6 +125,7 @@ class Distributor(object):
             ctype = type('MPI_Comm', (c_void_p,), {})
         comm_ptr = MPI._addressof(self._comm)
         comm_val = ctype.from_address(comm_ptr)
+        comm_val = byref(comm_val)
         return Object(name='comm', dtype=ctype, value=comm_val)
 
     @cached_property
