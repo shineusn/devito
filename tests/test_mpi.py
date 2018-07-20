@@ -249,7 +249,7 @@ def test_ctypes_neighbours():
 
     mapper = dict(zip(attrs, expected[distributor.nprocs][distributor.myrank]))
     _, _, obj = distributor._C_neighbours
-    assert all(getattr(obj.value, k) == v for k, v in mapper.items())
+    assert all(getattr(obj.value._obj, k) == v for k, v in mapper.items())
 
 
 @skipif_yask
