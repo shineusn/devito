@@ -346,8 +346,10 @@ def test_iet_simple_operator():
     f.data_with_halo[:] = 1.
 
     op = Operator(Eq(f.forward, f[t, x-1] + f[t, x+1] + 1))
-    op.apply(time=1)
+    from IPython import embed; embed()
+    op.apply(time=0)
 
+    from IPython import embed; embed()
     assert np.all(f.data_ro_domain[0] == 7.)
     assert np.all(f.data_ro_domain[1] == 3.)
     if f.grid.distributor.myrank == 0:

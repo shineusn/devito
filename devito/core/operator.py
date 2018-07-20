@@ -57,6 +57,7 @@ class OperatorCore(OperatorRunnable):
         self._globals.extend(sorted(cstructs, key=lambda i: i.tpname))
 
         self._includes.append('mpi.h')
+        self._includes.append('stdio.h')
 
         # Add in the halo update calls
         mapper = {k: List(body=v + list(k.body)) for k, v in mapper.items()}

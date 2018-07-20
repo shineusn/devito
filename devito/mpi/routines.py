@@ -10,9 +10,14 @@ from devito.ir.equations import DummyEq
 from devito.ir.iet import (ArrayCast, Call, Callable, Conditional, Expression,
                            Iteration, List, iet_insert_C_decls,
                            derive_parameters)
-from devito.symbolics import FieldFromPointer, Macro
+from devito.symbolics import CondNe, FieldFromPointer, FieldFromComposite, Macro
 from devito.types import Array, Symbol, LocalObject, OWNED, HALO, LEFT, RIGHT
 from devito.tools import numpy_to_mpitypes
+
+
+from devito.ir.iet import Element
+import cgen as c
+
 
 __all__ = ['copy', 'sendrecv', 'update_halo']
 
@@ -46,14 +51,24 @@ def copy(f, fixed, swap=False):
     if swap is False:
         eq = DummyEq(buf[buf_indices], dat[dat_indices])
         name = 'gather_%s' % f.name
+        a = Element(c.Statement('printf("gather! ")'))
     else:
         eq = DummyEq(dat[dat_indices], buf[buf_indices])
         name = 'scatter_%s' % f.name
+        a = Element(c.Statement('printf("scatter! ")'))
+
+
+    a2 = Element(c.Statement('printf("buf_x_size=%d ", buf_x_size)'))
+    a3 = Element(c.Statement('printf("dat_x_size=%d ", dat_x_size)'))
+    a4 = Element(c.Statement('printf("otime=%d ", otime)'))
+    a5 = Element(c.Statement('printf("ox=%d", ox)'))
+    a6 = Element(c.Statement('printf("buf[0]=%e\\n", buf[0])'))
 
     iet = Expression(eq)
     for i, d in reversed(list(zip(buf_indices, buf_dims))):
-        iet = Iteration(iet, i, d.symbolic_size)
+        iet = Iteration(iet, i, d.symbolic_size - 1)  # -1 as Iteration generates <=
     iet = List(body=[ArrayCast(dat), ArrayCast(buf), iet])
+    #iet = List(body=[ArrayCast(dat), ArrayCast(buf), a, a2, a3, a4, a5, iet, a6])
     parameters = [buf] + list(buf.shape) + [dat] + list(dat.shape) + dat_offsets
     return Callable(name, iet, 'void', parameters, ('static',))
 
@@ -76,13 +91,39 @@ def sendrecv(f, fixed):
     ofsg = [Symbol(name='og%s' % d.root) for d in f.dimensions]
     ofss = [Symbol(name='os%s' % d.root) for d in f.dimensions]
 
+    fromrank = Symbol(name='fromrank')
+    torank = Symbol(name='torank')
+
     parameters = [bufg] + list(bufg.shape) + [dat] + list(dat.shape) + ofsg
     gather = Call('gather_%s' % f.name, parameters)
     parameters = [bufs] + list(bufs.shape) + [dat] + list(dat.shape) + ofss
     scatter = Call('scatter_%s' % f.name, parameters)
 
-    fromrank = Symbol(name='fromrank')
-    torank = Symbol(name='torank')
+    # The scatter must be guarded as we must not alter the halo values along
+    # the domain boundary, where the sender is actually MPI.PROC_NULL
+    scatter = Conditional(CondNe(fromrank, Macro('MPI_PROC_NULL')), scatter)
+#    from devito.ir.iet import Element
+#    import cgen as c
+#    a2 = Element(c.Statement('printf("MPI_PROC_NUL=%d\\n", MPI_PROC_NULL)'))
+    a = Element(c.Statement('printf("bufs[0]=%e ", bufs[0])'))
+    a1 = Element(c.Statement('printf("fromrank=%d ", fromrank)'))
+    a2 = Element(c.Statement('printf("torank=%d ", torank)'))
+    scatter = List(body=[scatter])
+
+    MPI_Status = type('MPI_Status', (c_void_p,), {})
+    srecv = LocalObject(name='srecv', dtype=MPI_Status)
+    import numpy as np
+    count = LocalObject(name='count', dtype=np.int)
+    from devito.symbolics import Byref
+    bb = Call('MPI_Get_count', [srecv, Macro(numpy_to_mpitypes(f.dtype)), count])
+    #a3 = Element(c.Statement('printf("count=%d \\n", count)'))
+    bb = Element(c.Statement('int count'))
+    a3 = Element(c.Statement('MPI_Comm_size(comm, &count)'))
+    a33 = Element(c.Statement('printf("count=%d \\n", count)'))
+    a4 = Conditional(CondNe(FieldFromComposite('MPI_ERROR', srecv), Macro('MPI_SUCCESS')),
+                     List(body=[Element(c.Statement('printf("WTF!?!?\\n")'))]))
+    cc = List(body=[bb, a1, a2, a, a3, a33])
+    dd = Element(c.Statement('printf("Waitrecv done !!!\\n")'))
 
     MPI_Request = type('MPI_Request', (c_void_p,), {})
     rrecv = LocalObject(name='rrecv', dtype=MPI_Request)
@@ -90,14 +131,16 @@ def sendrecv(f, fixed):
 
     count = reduce(mul, bufs.shape, 1)
     recv = Call('MPI_Irecv', [bufs, count, Macro(numpy_to_mpitypes(f.dtype)),
-                              fromrank, Macro('MPI_ANY_TAG'), comm, rrecv])
+#                              fromrank, Macro('MPI_ANY_TAG'), comm, rrecv])
+                              fromrank, '13', comm, rrecv])
     send = Call('MPI_Isend', [bufg, count, Macro(numpy_to_mpitypes(f.dtype)),
-                              torank, Macro('MPI_ANY_TAG'), comm, rsend])
+#                              torank, Macro('MPI_ANY_TAG'), comm, rsend])
+                              torank, '13', comm, rsend])
 
-    waitrecv = Call('MPI_Wait', [rrecv, Macro('MPI_STATUS_IGNORE')])
+    waitrecv = Call('MPI_Wait', [rrecv, srecv])
     waitsend = Call('MPI_Wait', [rsend, Macro('MPI_STATUS_IGNORE')])
 
-    iet = List(body=[recv, gather, send, waitrecv, waitsend, scatter])
+    iet = List(body=[recv, gather, send, waitsend, cc, waitrecv, dd, scatter])
     iet = List(body=[ArrayCast(dat), iet_insert_C_decls(iet)])
     parameters = ([dat] + list(dat.shape) + list(bufs.shape) +
                   ofsg + ofss + [fromrank, torank, comm])
@@ -136,7 +179,7 @@ def update_halo(f, fixed):
         parameters = ([f] + list(f.symbolic_shape) + sizes + loffsets +
                       roffsets + [rpeer, lpeer, comm])
         call = Call('sendrecv_%s' % f.name, parameters)
-        body.append(Conditional(Symbol(name='m%sl' % d) & Ge(lpeer, 0), call))
+        body.append(Conditional(Symbol(name='m%sl' % d), call))
 
         # Sending to right, receiving from left
         rsizes, roffsets = mapper[(d, RIGHT, OWNED)]
@@ -146,7 +189,7 @@ def update_halo(f, fixed):
         parameters = ([f] + list(f.symbolic_shape) + sizes + roffsets +
                       loffsets + [lpeer, rpeer, comm])
         call = Call('sendrecv_%s' % f.name, parameters)
-        body.append(Conditional(Symbol(name='m%sr' % d) & Ge(rpeer, 0), call))
+        body.append(Conditional(Symbol(name='m%sr' % d), call))
 
     iet = List(body=body)
     parameters = derive_parameters(iet, drop_locals=True)
