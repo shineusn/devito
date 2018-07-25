@@ -39,7 +39,7 @@ matrix:
           packages:
             - gcc-4.9
             - g++-4.9
-      env: DEVITO_LOGGING=DEBUG DEVITO_ARCH=gcc-4.9 DEVITO_OPENMP=1 OMP_NUM_THREADS=2 RUN_EXAMPLES=True INSTALL_TYPE=conda
+      env: DEVITO_DEBUG_COMPILER=1 DEVITO_LOGGING=DEBUG DEVITO_ARCH=gcc-4.9 DEVITO_OPENMP=1 OMP_NUM_THREADS=2 RUN_EXAMPLES=True INSTALL_TYPE=conda
     - os: linux
       python: "3.6"
       addons:
@@ -49,7 +49,7 @@ matrix:
           packages:
             - gcc-7
             - g++-7
-      env: DEVITO_ARCH=gcc-7 DEVITO_OPENMP=0 DEVITO_BACKEND=yask YC_CXX=g++-7 INSTALL_TYPE=conda RUN_EXAMPLES=False
+      env: DEVITO_ARCH=gcc-7 DEVITO_OPENMP=1 OMP_NUM_THREADS=2 RUN_EXAMPLES=True INSTALL_TYPE=conda
   allow_failures:
     - os: linux
       python: "2.7"

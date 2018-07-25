@@ -379,6 +379,7 @@ class OperatorRunnable(Operator):
             >>> op = Operator(Eq(u3.forward, u3 + 1))
             >>> op.apply(time_M=10)
         """
+        print(self)
         # Build the arguments list to invoke the kernel function
         args = self.arguments(**kwargs)
 
